@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import dotenv from 'dotenv';
 import pool, { initDb } from './db.js';
+import { executeWarpRequest } from './warp-request.js';
 
 dotenv.config();
 
@@ -271,21 +272,21 @@ app.post(['/api/proxy', '/api/execute'], optionalAuth, async (req, res) => {
       }
     }
 
-    const options = {
+    const requestOptions = {
       method: method.toUpperCase(),
       headers: cleanHeaders,
-      headersTimeout: timeout,
-      bodyTimeout: timeout,
-      dispatcher: insecure ? insecureAgent : undefined
+      timeout,
+      insecure
     };
 
-    if (!['GET', 'HEAD'].includes(options.method) && body !== null && body !== undefined) {
-      options.body = typeof body === 'object' ? JSON.stringify(body) : String(body);
+    if (!['GET', 'HEAD'].includes(requestOptions.method) && body !== null && body !== undefined) {
+      requestOptions.body = typeof body === 'object' ? JSON.stringify(body) : String(body);
     }
 
-    const response = await request(url, options);
+    // Eksekusi request lewat Cloudflare WARP egress
+    const response = await executeWarpRequest(url, requestOptions);
     const endTime = performance.now();
-    const rawBody = await response.body.text();
+    const rawBody = response.body;
 
     const responseHeaders = {};
     for (const [key, value] of Object.entries(response.headers)) {
