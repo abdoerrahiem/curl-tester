@@ -83,12 +83,12 @@ export default function App() {
 
   const getMethodBadgeColor = (m) => {
     switch (m) {
-      case 'GET': return 'text-emerald-500 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-      case 'POST': return 'text-amber-500 dark:text-amber-400 bg-amber-500/10 border-amber-500/20';
-      case 'PUT': return 'text-violet-500 dark:text-violet-400 bg-violet-500/10 border-violet-500/20';
-      case 'DELETE': return 'text-rose-500 dark:text-rose-400 bg-rose-500/10 border-rose-500/20';
-      case 'PATCH': return 'text-teal-500 dark:text-teal-400 bg-teal-500/10 border-teal-500/20';
-      default: return 'text-zinc-500 dark:text-zinc-400 bg-zinc-500/10 border-zinc-500/20';
+      case 'GET': return 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+      case 'POST': return 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30';
+      case 'PUT': return 'text-violet-600 dark:text-violet-400 bg-violet-500/10 border-violet-500/30';
+      case 'DELETE': return 'text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/30';
+      case 'PATCH': return 'text-teal-600 dark:text-teal-400 bg-teal-500/10 border-teal-500/30';
+      default: return 'text-zinc-600 dark:text-zinc-400 bg-zinc-500/10 border-zinc-500/30';
     }
   };
 
@@ -413,10 +413,6 @@ func main() {
             )}
           </button>
         </div>
-
-        <div className="text-[11px] text-zinc-400 hidden sm:block">
-          {mainTab === 'curl' ? 'Mode: Direct Multiline cURL Runner (Auto Clean Supported)' : 'Mode: Interactive Visual Request Builder'}
-        </div>
       </div>
 
       {/* 3. Main Content Area */}
@@ -437,13 +433,6 @@ func main() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={handleAutoCleanCurl}
-                      className="text-xs px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5 transition cursor-pointer"
-                      title="Bersihkan log prefix dan format ulang cURL"
-                    >
-                      <Sparkles size={12} className="text-amber-500" /> Format & Clean
-                    </button>
-                    <button
                       onClick={() => setRawCurl('')}
                       className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 flex items-center gap-1 cursor-pointer"
                       title="Clear editor"
@@ -463,10 +452,16 @@ func main() {
                   />
                 </div>
 
-                <div className="flex justify-between items-center pt-2">
-                  <div className="text-[11px] text-zinc-400">
-                    Otomatis membersihkan log prefix seperti <code className="font-mono">I/flutter: ║</code> saat dieksekusi.
-                  </div>
+                <div className="flex justify-end items-center pt-2 gap-2.5">
+                  <button
+                    onClick={handleAutoCleanCurl}
+                    disabled={!rawCurl.trim()}
+                    className="h-10 px-4 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700/80 text-zinc-700 dark:text-zinc-200 font-semibold text-xs flex items-center gap-2 disabled:opacity-40 transition cursor-pointer"
+                    title="Bersihkan log prefix dan rapikan cURL"
+                  >
+                    <Sparkles size={13} className="text-amber-500" />
+                    <span>Format & Clean</span>
+                  </button>
                   <button
                     onClick={executeRawCurl}
                     disabled={curlLoading || !rawCurl.trim()}
@@ -539,13 +534,18 @@ func main() {
                         onChange={(e) => setMethod(e.target.value)}
                         className={`h-11 px-3.5 rounded-lg border font-mono font-bold text-xs appearance-none pr-8 cursor-pointer focus:outline-none transition ${getMethodBadgeColor(method)}`}
                       >
-                        <option value="GET">GET</option>
-                        <option value="POST">POST</option>
-                        <option value="PUT">PUT</option>
-                        <option value="PATCH">PATCH</option>
-                        <option value="DELETE">DELETE</option>
-                        <option value="HEAD">HEAD</option>
+                        <option value="GET" className="bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 font-semibold">GET</option>
+                        <option value="POST" className="bg-white dark:bg-zinc-900 text-amber-600 dark:text-amber-400 font-semibold">POST</option>
+                        <option value="PUT" className="bg-white dark:bg-zinc-900 text-violet-600 dark:text-violet-400 font-semibold">PUT</option>
+                        <option value="PATCH" className="bg-white dark:bg-zinc-900 text-teal-600 dark:text-teal-400 font-semibold">PATCH</option>
+                        <option value="DELETE" className="bg-white dark:bg-zinc-900 text-rose-600 dark:text-rose-400 font-semibold">DELETE</option>
+                        <option value="HEAD" className="bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 font-semibold">HEAD</option>
                       </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-zinc-400">
+                        <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+                          <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                        </svg>
+                      </div>
                     </div>
 
                     <input
