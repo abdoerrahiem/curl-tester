@@ -14,7 +14,11 @@ import {
   AlertCircle,
   Sliders,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  History,
+  ArrowUpRight,
+  Search,
+  ExternalLink
 } from 'lucide-react';
 import { parseCurlCommand, sanitizeCurlInput } from './utils/curlParser';
 
@@ -27,7 +31,7 @@ export default function App() {
     }
   });
 
-  const [mainTab, setMainTab] = useState('curl'); // 'curl' | 'tester'
+  const [mainTab, setMainTab] = useState('curl'); // 'curl' | 'tester' | 'history'
 
   // Tab cURL specific state
   const [rawCurl, setRawCurl] = useState('');
@@ -37,81 +41,212 @@ export default function App() {
   // Tab API Tester specific state
   const [method, setMethod] = useState('GET');
   const [url, setUrl] = useState('');
-  const [subTab, setSubTab] = useState('headers'); // 'headers' | 'body' | 'curl' | 'codegen'
-  const [codeLang, setCodeLang] = useState('curl');
-  const [headers, setHeaders] = useState([
-    { key: '', value: '' }
-  ]);
+  const [headers, setHeaders] = useState([]);
   const [body, setBody] = useState('');
+  const [subTab, setSubTab] = useState('headers');
   const [testerLoading, setTesterLoading] = useState(false);
   const [testerResponse, setTesterResponse] = useState(null);
+
+  // Import cURL Modal in Tester tab
+  const [importCurlModalOpen, setImportCurlModalOpen] = useState(false);
   const [importCurlInput, setImportCurlInput] = useState('');
 
+  // Code Export tab
+  const [codeLang, setCodeLang] = useState('fetch');
+
+  // History state
+  const [historyList, setHistoryList] = useState(() => {
+    try {
+      const saved = localStorage.getItem('curl_tester_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [historySearch, setHistorySearch] = useState('');
+  const [copiedId, setCopiedId] = useState(null);
   const [copied, setCopied] = useState(false);
 
+  // Sync theme
   useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-      root.style.colorScheme = 'dark';
-    } else {
-      root.classList.remove('dark');
-      root.style.colorScheme = 'light';
-    }
     try {
       localStorage.setItem('theme', theme);
-    } catch (e) {}
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    } catch (e) {
+      console.error(e);
+    }
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
-  };
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
-  };
-
-  const formatBody = (raw) => {
+  // Sync history to localStorage
+  const saveToHistory = (item) => {
     try {
-      return JSON.stringify(JSON.parse(raw), null, 2);
+      setHistoryList((prev) => {
+        const next = [item, ...prev.filter((h) => h.id !== item.id)].slice(0, 50);
+        localStorage.setItem('curl_tester_history', JSON.stringify(next));
+        return next;
+      });
+    } catch (e) {
+      console.error('Failed to save history', e);
+    }
+  };
+
+  const clearAllHistory = () => {
+    if (window.confirm('Hapus seluruh riwayat request?')) {
+      setHistoryList([]);
+      try {
+        localStorage.removeItem('curl_tester_history');
+      } catch (e) {}
+    }
+  };
+
+  const deleteHistoryItem = (id, e) => {
+    e.stopPropagation();
+    setHistoryList((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      try {
+        localStorage.setItem('curl_tester_history', JSON.stringify(next));
+      } catch (err) {}
+      return next;
+    });
+  };
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  const copyToClipboard = (text, id = null) => {
+    navigator.clipboard.writeText(text);
+    if (id) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } else {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
+  // Format JSON Response
+  const formatBody = (raw) => {
+    if (!raw) return '';
+    if (typeof raw === 'object') return JSON.stringify(raw, null, 2);
+    try {
+      const parsed = JSON.parse(raw);
+      return JSON.stringify(parsed, null, 2);
     } catch {
       return raw;
     }
   };
 
+  // Helper method badge color
   const getMethodBadgeColor = (m) => {
-    switch (m) {
-      case 'GET': return 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-      case 'POST': return 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30';
-      case 'PUT': return 'text-violet-600 dark:text-violet-400 bg-violet-500/10 border-violet-500/30';
-      case 'DELETE': return 'text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/30';
-      case 'PATCH': return 'text-teal-600 dark:text-teal-400 bg-teal-500/10 border-teal-500/30';
-      default: return 'text-zinc-600 dark:text-zinc-400 bg-zinc-500/10 border-zinc-500/30';
+    switch (m?.toUpperCase()) {
+      case 'GET':
+        return 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/10';
+      case 'POST':
+        return 'text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/10';
+      case 'PUT':
+        return 'text-violet-600 dark:text-violet-400 border-violet-500/30 bg-violet-500/10';
+      case 'PATCH':
+        return 'text-teal-600 dark:text-teal-400 border-teal-500/30 bg-teal-500/10';
+      case 'DELETE':
+        return 'text-rose-600 dark:text-rose-400 border-rose-500/30 bg-rose-500/10';
+      default:
+        return 'text-zinc-600 dark:text-zinc-400 border-zinc-500/30 bg-zinc-500/10';
     }
   };
 
-  // --- TAB 1: cURL EXECUTOR & CLEANER ---
-  const handleAutoCleanCurl = () => {
-    if (!rawCurl.trim()) return;
-    const cleaned = sanitizeCurlInput(rawCurl);
-    setRawCurl(cleaned);
+  // Convert tester state to cURL command string
+  const generateCurlFromTester = (tMethod = method, tUrl = url, tHeaders = headers, tBody = body) => {
+    let cmd = `curl -X ${tMethod} "${tUrl || 'https://api.example.com'}"`;
+    tHeaders.forEach((h) => {
+      if (h.key.trim()) {
+        cmd += ` \\\n  -H "${h.key}: ${h.value}"`;
+      }
+    });
+    if (!['GET', 'HEAD'].includes(tMethod) && tBody && tBody.trim()) {
+      const escapedBody = tBody.replace(/'/g, "'\\''");
+      cmd += ` \\\n  -d '${escapedBody}'`;
+    }
+    return cmd;
   };
 
+  // Load history item into cURL tab
+  const loadHistoryToCurl = (item) => {
+    const cmd = item.curlCommand || generateCurlFromTester(item.method, item.url, item.headers || [], item.body || '');
+    setRawCurl(cmd);
+    setMainTab('curl');
+  };
+
+  // Load history item into API Tester tab
+  const loadHistoryToTester = (item) => {
+    if (item.source === 'curl' && item.curlCommand) {
+      const parsed = parseCurlCommand(item.curlCommand);
+      if (parsed) {
+        setMethod(parsed.method || 'GET');
+        setUrl(parsed.url || '');
+        setHeaders(
+          parsed.headers ? Object.entries(parsed.headers).map(([key, value]) => ({ key, value })) : []
+        );
+        setBody(parsed.body || '');
+      }
+    } else {
+      setMethod(item.method || 'GET');
+      setUrl(item.url || '');
+      setHeaders(item.headers || []);
+      setBody(item.body || '');
+    }
+    setMainTab('tester');
+  };
+
+  // Handler format & clean cURL
+  const handleAutoCleanCurl = () => {
+    if (!rawCurl.trim()) return;
+    const sanitized = sanitizeCurlInput(rawCurl);
+    const parsed = parseCurlCommand(sanitized);
+    if (!parsed || !parsed.url) {
+      setRawCurl(sanitized);
+      return;
+    }
+    let formatted = `curl -X ${parsed.method || 'GET'} "${parsed.url}"`;
+    if (parsed.headers && Object.keys(parsed.headers).length > 0) {
+      for (const [key, val] of Object.entries(parsed.headers)) {
+        formatted += ` \\\n  -H "${key}: ${val}"`;
+      }
+    }
+    if (parsed.body) {
+      const escaped = parsed.body.replace(/'/g, "'\\''");
+      formatted += ` \\\n  -d '${escaped}'`;
+    }
+    setRawCurl(formatted);
+  };
+
+  // Execute from Tab 1: cURL Only
   const executeRawCurl = async () => {
     if (!rawCurl.trim()) return;
     setCurlLoading(true);
     setCurlResponse(null);
 
+    const parsed = parseCurlCommand(rawCurl);
+    if (!parsed || !parsed.url) {
+      setCurlResponse({
+        error: true,
+        message: 'Gagal mem-parsing syntax cURL. Pastikan URL dan format cURL valid.'
+      });
+      setCurlLoading(false);
+      return;
+    }
+
     try {
-      const parsed = parseCurlCommand(rawCurl);
-      const res = await fetch('/api/execute', {
+      const res = await fetch('/api/proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          method: parsed.method,
           url: parsed.url,
+          method: parsed.method,
           headers: parsed.headers,
           body: parsed.body
         })
@@ -119,134 +254,49 @@ export default function App() {
 
       const data = await res.json();
       setCurlResponse(data);
+
+      saveToHistory({
+        id: Date.now().toString(),
+        source: 'curl',
+        timestamp: new Date().toISOString(),
+        method: parsed.method || 'GET',
+        url: parsed.url,
+        curlCommand: rawCurl,
+        headers: Object.entries(parsed.headers || {}).map(([key, value]) => ({ key, value })),
+        body: parsed.body || '',
+        status: data?.status || (data?.error ? 'ERR' : 200),
+        timeMs: data?.timeMs || 0
+      });
     } catch (err) {
       setCurlResponse({
         error: true,
-        message: err.message || 'Gagal mengeksekusi perintah cURL'
+        message: 'Gagal menghubungi server proxy: ' + err.message
       });
     } finally {
       setCurlLoading(false);
     }
   };
 
-  // --- TAB 2: API TESTER ---
-  const addHeader = () => {
-    setHeaders([...headers, { key: '', value: '' }]);
-  };
-
-  const updateHeader = (index, field, val) => {
-    const next = [...headers];
-    next[index][field] = val;
-    setHeaders(next);
-  };
-
-  const removeHeader = (index) => {
-    setHeaders(headers.filter((_, i) => i !== index));
-  };
-
-  const generateCurlFromTester = () => {
-    let cmd = `curl -X ${method} "${url || 'https://api.example.com'}"`;
-    headers.forEach(h => {
-      if (h.key.trim()) {
-        cmd += ` \\\n  -H "${h.key.trim()}: ${h.value.trim()}"`;
-      }
-    });
-    if (body.trim() && !['GET', 'HEAD'].includes(method)) {
-      cmd += ` \\\n  -d '${body.replace(/'/g, "'\\''")}'`;
-    }
-    return cmd;
-  };
-
-  const generateCodeSnippet = (lang) => {
-    if (lang === 'curl') return generateCurlFromTester();
-    const validHeaders = headers.filter(h => h.key.trim());
-    const headerObj = validHeaders.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {});
-
-    if (lang === 'fetch') {
-      return `const response = await fetch("${url}", {
-  method: "${method}",
-  headers: ${JSON.stringify(headerObj, null, 2)},
-  ${!['GET', 'HEAD'].includes(method) && body.trim() ? `body: JSON.stringify(${body})` : ''}
-});
-const data = await response.json();
-console.log(data);`;
-    }
-
-    if (lang === 'python') {
-      return `import requests
-
-url = "${url}"
-headers = ${JSON.stringify(headerObj, null, 2)}
-${!['GET', 'HEAD'].includes(method) && body.trim() ? `payload = ${body}\nresponse = requests.${method.toLowerCase()}(url, headers=headers, json=payload)` : `response = requests.${method.toLowerCase()}(url, headers=headers)`}
-
-print(response.status_code)
-print(response.text)`;
-    }
-
-    if (lang === 'golang') {
-      return `package main
-
-import (
-  "fmt"
-  "net/http"
-  "io"
-  ${!['GET', 'HEAD'].includes(method) && body.trim() ? `"strings"` : ''}
-)
-
-func main() {
-  url := "${url}"
-  ${!['GET', 'HEAD'].includes(method) && body.trim() ? `payload := strings.NewReader(\`${body}\`)\n  req, _ := http.NewRequest("${method}", url, payload)` : `req, _ := http.NewRequest("${method}", url, nil)`}
-
-  ${validHeaders.map(h => `req.Header.Add("${h.key}", "${h.value}")`).join('\n  ')}
-
-  res, _ := http.DefaultClient.Do(req)
-  defer res.Body.Close()
-  body, _ := io.ReadAll(res.Body)
-
-  fmt.Println(string(body))
-}`;
-    }
-
-    return '';
-  };
-
-  const parseToTesterForm = () => {
-    if (!importCurlInput.trim()) return;
-    try {
-      const parsed = parseCurlCommand(importCurlInput);
-      setUrl(parsed.url);
-      setMethod(parsed.method);
-
-      const headerPairs = Object.entries(parsed.headers).map(([k, v]) => ({ key: k, value: v }));
-      if (headerPairs.length > 0) {
-        setHeaders(headerPairs);
-      }
-      if (parsed.body) {
-        setBody(typeof parsed.body === 'object' ? JSON.stringify(parsed.body, null, 2) : parsed.body);
-      }
-      setImportCurlInput('');
-    } catch (err) {
-      alert('Gagal mengurai cURL: ' + err.message);
-    }
-  };
-
+  // Execute from Tab 2: API Tester Visual
   const executeTesterRequest = async () => {
     if (!url.trim()) return;
     setTesterLoading(true);
     setTesterResponse(null);
 
     const headerMap = {};
-    headers.forEach(h => {
-      if (h.key.trim()) headerMap[h.key.trim()] = h.value.trim();
+    headers.forEach((h) => {
+      if (h.key.trim()) headerMap[h.key.trim()] = h.value;
     });
 
+    const activeCurl = generateCurlFromTester(method, url, headers, body);
+
     try {
-      const res = await fetch('/api/execute', {
+      const res = await fetch('/api/proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          method,
           url,
+          method,
           headers: headerMap,
           body: !['GET', 'HEAD'].includes(method) ? body : undefined
         })
@@ -254,6 +304,19 @@ func main() {
 
       const data = await res.json();
       setTesterResponse(data);
+
+      saveToHistory({
+        id: Date.now().toString(),
+        source: 'tester',
+        timestamp: new Date().toISOString(),
+        method: method || 'GET',
+        url,
+        curlCommand: activeCurl,
+        headers: [...headers],
+        body: !['GET', 'HEAD'].includes(method) ? body : '',
+        status: data?.status || (data?.error ? 'ERR' : 200),
+        timeMs: data?.timeMs || 0
+      });
     } catch (err) {
       setTesterResponse({
         error: true,
@@ -262,6 +325,27 @@ func main() {
     } finally {
       setTesterLoading(false);
     }
+  };
+
+  // Parse cURL inside modal to tester form
+  const parseToTesterForm = () => {
+    if (!importCurlInput.trim()) return;
+    const parsed = parseCurlCommand(importCurlInput);
+    if (!parsed || !parsed.url) {
+      alert('Gagal mengenali format cURL. Pastikan menyertakan URL target.');
+      return;
+    }
+    setMethod(parsed.method || 'GET');
+    setUrl(parsed.url);
+    if (parsed.headers && Object.keys(parsed.headers).length > 0) {
+      setHeaders(Object.entries(parsed.headers).map(([key, value]) => ({ key, value })));
+    }
+    if (parsed.body) {
+      setBody(parsed.body);
+      setSubTab('body');
+    }
+    setImportCurlModalOpen(false);
+    setImportCurlInput('');
   };
 
   // Render Response Box
@@ -276,7 +360,13 @@ func main() {
 
           {resp && !resp.error && (
             <div className="flex items-center gap-3 text-xs font-mono">
-              <span className={`px-2 py-0.5 rounded font-bold border ${resp.status >= 200 && resp.status < 300 ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/20'}`}>
+              <span
+                className={`px-2 py-0.5 rounded font-bold border ${
+                  resp.status >= 200 && resp.status < 300
+                    ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                    : 'text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/20'
+                }`}
+              >
                 {resp.status}
               </span>
               <span className="flex items-center gap-1 text-zinc-500">
@@ -289,7 +379,7 @@ func main() {
           )}
         </div>
 
-        {/* Response Body Box */}
+        {/* Response Body Box: capped at 50vh */}
         <div className="space-y-2">
           <div className="flex justify-between items-center text-xs">
             <span className="text-zinc-500 dark:text-zinc-400">Response Body</span>
@@ -305,7 +395,7 @@ func main() {
           </div>
 
           {isLoading ? (
-            <div className="min-h-[380px] rounded-lg border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 text-xs space-y-3">
+            <div className="h-[280px] max-h-[50vh] rounded-lg border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 text-xs space-y-3">
               <div className="w-6 h-6 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
               <span>Executing request via backend proxy...</span>
             </div>
@@ -317,11 +407,11 @@ func main() {
               <div>{resp.message}</div>
             </div>
           ) : resp ? (
-            <pre className="min-h-[380px] p-4 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-auto whitespace-pre-wrap select-all">
+            <pre className="max-h-[50vh] p-4 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-auto whitespace-pre-wrap select-all">
               {formatBody(resp.body)}
             </pre>
           ) : (
-            <div className="min-h-[380px] rounded-lg border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 text-xs space-y-2">
+            <div className="h-[280px] max-h-[50vh] rounded-lg border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 text-xs space-y-2">
               <Code size={24} className="opacity-40" />
               <span>Klik &quot;Execute&quot; atau &quot;Send&quot; untuk melihat hasil response.</span>
             </div>
@@ -349,9 +439,19 @@ func main() {
     );
   };
 
+  // Filter history by search
+  const filteredHistory = historyList.filter((item) => {
+    if (!historySearch.trim()) return true;
+    const q = historySearch.toLowerCase();
+    return (
+      item.url?.toLowerCase().includes(q) ||
+      item.method?.toLowerCase().includes(q) ||
+      item.curlCommand?.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans transition-colors duration-150">
-      
       {/* 1. Top Navbar */}
       <header className="h-16 border-b border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900 px-6 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center space-x-3">
@@ -412,12 +512,31 @@ func main() {
               <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-900 dark:bg-zinc-100 rounded-full" />
             )}
           </button>
+
+          <button
+            onClick={() => setMainTab('history')}
+            className={`py-3 flex items-center gap-2 relative transition cursor-pointer ${
+              mainTab === 'history'
+                ? 'text-zinc-900 dark:text-white font-bold'
+                : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
+            }`}
+          >
+            <History size={14} />
+            <span>History</span>
+            {historyList.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                {historyList.length}
+              </span>
+            )}
+            {mainTab === 'history' && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-900 dark:bg-zinc-100 rounded-full" />
+            )}
+          </button>
         </div>
       </div>
 
       {/* 3. Main Content Area */}
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        
         {/* ======================= TAB 1: cURL ONLY ======================= */}
         {mainTab === 'curl' && (
           <>
@@ -485,45 +604,70 @@ func main() {
           </>
         )}
 
-        {/* ======================= TAB 2: API TESTER ======================= */}
+        {/* ======================= TAB 2: API TESTER VISUAL ======================= */}
         {mainTab === 'tester' && (
           <>
             {/* Left Panel: Request Builder */}
             <div className="flex-1 lg:w-1/2 border-r border-zinc-200 dark:border-zinc-800/80 flex flex-col bg-white dark:bg-zinc-900 overflow-y-auto">
-              <div className="p-6 space-y-5">
-                
-                {/* Import cURL Bar */}
-                <div className="space-y-1.5">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Terminal size={14} /> Import Raw cURL ke Form
-                    </span>
-                    {importCurlInput.trim() && (
-                      <button
-                        onClick={parseToTesterForm}
-                        className="font-medium text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-                      >
-                        Convert &rarr;
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder='Paste syntax cURL (bisa dari logger flutter/android) di sini'
-                      value={importCurlInput}
-                      onChange={(e) => setImportCurlInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') parseToTesterForm(); }}
-                      className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3.5 py-2 text-xs font-mono text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition"
-                    />
+              <div className="p-6 space-y-6 flex-1">
+                {/* Import cURL quick action */}
+                <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Request Builder
+                  </span>
+                  <div className="flex items-center gap-3">
                     <button
-                      onClick={parseToTesterForm}
-                      className="px-3.5 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-xs font-medium rounded-lg text-zinc-700 dark:text-zinc-300 transition cursor-pointer"
+                      onClick={() => setImportCurlModalOpen(!importCurlModalOpen)}
+                      className="text-xs px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5 transition cursor-pointer"
                     >
-                      Parse
+                      <Sparkles size={12} className="text-amber-500" />
+                      <span>Import cURL</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setUrl('');
+                        setHeaders([]);
+                        setBody('');
+                      }}
+                      className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 flex items-center gap-1 cursor-pointer"
+                      title="Clear builder inputs"
+                    >
+                      <RotateCcw size={13} /> Clear
                     </button>
                   </div>
                 </div>
+
+                {/* Import Modal */}
+                {importCurlModalOpen && (
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                        Paste cURL syntax to parse into form
+                      </span>
+                      <button
+                        onClick={() => setImportCurlModalOpen(false)}
+                        className="text-xs text-zinc-400 hover:text-zinc-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <textarea
+                      rows={3}
+                      placeholder="curl -X POST https://api... -H '...' -d '...'"
+                      value={importCurlInput}
+                      onChange={(e) => setImportCurlInput(e.target.value)}
+                      className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={parseToTesterForm}
+                        className="px-4 py-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs rounded-lg hover:opacity-90"
+                      >
+                        Parse to Form
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* URL & Method Bar */}
                 <div className="space-y-1.5">
@@ -532,14 +676,46 @@ func main() {
                       <select
                         value={method}
                         onChange={(e) => setMethod(e.target.value)}
-                        className={`h-11 px-3.5 rounded-lg border font-mono font-bold text-xs appearance-none pr-8 cursor-pointer focus:outline-none transition ${getMethodBadgeColor(method)}`}
+                        className={`h-11 px-3.5 rounded-lg border font-mono font-bold text-xs appearance-none pr-8 cursor-pointer focus:outline-none transition ${getMethodBadgeColor(
+                          method
+                        )}`}
                       >
-                        <option value="GET" className="bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 font-semibold">GET</option>
-                        <option value="POST" className="bg-white dark:bg-zinc-900 text-amber-600 dark:text-amber-400 font-semibold">POST</option>
-                        <option value="PUT" className="bg-white dark:bg-zinc-900 text-violet-600 dark:text-violet-400 font-semibold">PUT</option>
-                        <option value="PATCH" className="bg-white dark:bg-zinc-900 text-teal-600 dark:text-teal-400 font-semibold">PATCH</option>
-                        <option value="DELETE" className="bg-white dark:bg-zinc-900 text-rose-600 dark:text-rose-400 font-semibold">DELETE</option>
-                        <option value="HEAD" className="bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 font-semibold">HEAD</option>
+                        <option
+                          value="GET"
+                          className="bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 font-semibold"
+                        >
+                          GET
+                        </option>
+                        <option
+                          value="POST"
+                          className="bg-white dark:bg-zinc-900 text-amber-600 dark:text-amber-400 font-semibold"
+                        >
+                          POST
+                        </option>
+                        <option
+                          value="PUT"
+                          className="bg-white dark:bg-zinc-900 text-violet-600 dark:text-violet-400 font-semibold"
+                        >
+                          PUT
+                        </option>
+                        <option
+                          value="PATCH"
+                          className="bg-white dark:bg-zinc-900 text-teal-600 dark:text-teal-400 font-semibold"
+                        >
+                          PATCH
+                        </option>
+                        <option
+                          value="DELETE"
+                          className="bg-white dark:bg-zinc-900 text-rose-600 dark:text-rose-400 font-semibold"
+                        >
+                          DELETE
+                        </option>
+                        <option
+                          value="HEAD"
+                          className="bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 font-semibold"
+                        >
+                          HEAD
+                        </option>
                       </select>
                       <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-zinc-400">
                         <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
@@ -553,13 +729,15 @@ func main() {
                       placeholder="https://api.domain.com/v1/endpoint"
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') executeTesterRequest(); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') executeTesterRequest();
+                      }}
                       className="flex-1 h-11 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition"
                     />
 
                     <button
                       onClick={executeTesterRequest}
-                      disabled={testerLoading}
+                      disabled={testerLoading || !url.trim()}
                       className="h-11 px-6 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs flex items-center gap-2 hover:opacity-90 active:scale-95 disabled:opacity-50 transition shadow-sm cursor-pointer"
                     >
                       {testerLoading ? (
@@ -576,9 +754,13 @@ func main() {
                 <div className="border-b border-zinc-200 dark:border-zinc-800 flex space-x-6 text-xs font-medium">
                   <button
                     onClick={() => setSubTab('headers')}
-                    className={`pb-3 relative transition cursor-pointer ${subTab === 'headers' ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
+                    className={`pb-3 relative transition cursor-pointer ${
+                      subTab === 'headers'
+                        ? 'text-zinc-900 dark:text-white font-semibold'
+                        : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                    }`}
                   >
-                    Headers ({headers.filter(h => h.key.trim()).length})
+                    Headers ({headers.filter((h) => h.key.trim()).length})
                     {subTab === 'headers' && (
                       <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-900 dark:bg-zinc-100 rounded-full" />
                     )}
@@ -586,7 +768,11 @@ func main() {
 
                   <button
                     onClick={() => setSubTab('body')}
-                    className={`pb-3 relative transition cursor-pointer ${subTab === 'body' ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
+                    className={`pb-3 relative transition cursor-pointer ${
+                      subTab === 'body'
+                        ? 'text-zinc-900 dark:text-white font-semibold'
+                        : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                    }`}
                   >
                     Body {['GET', 'HEAD'].includes(method) && <span className="text-[10px] text-zinc-400">(disabled)</span>}
                     {subTab === 'body' && (
@@ -596,126 +782,101 @@ func main() {
 
                   <button
                     onClick={() => setSubTab('curl')}
-                    className={`pb-3 relative transition cursor-pointer ${subTab === 'curl' ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
+                    className={`pb-3 relative transition cursor-pointer ${
+                      subTab === 'curl'
+                        ? 'text-zinc-900 dark:text-white font-semibold'
+                        : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                    }`}
                   >
-                    Live cURL
+                    Generated cURL
                     {subTab === 'curl' && (
-                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-900 dark:bg-zinc-100 rounded-full" />
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() => setSubTab('codegen')}
-                    className={`pb-3 relative transition cursor-pointer ${subTab === 'codegen' ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
-                  >
-                    Code Snippets
-                    {subTab === 'codegen' && (
                       <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-900 dark:bg-zinc-100 rounded-full" />
                     )}
                   </button>
                 </div>
 
-                {/* SubTab: Headers */}
+                {/* Sub-tab 1: Headers */}
                 {subTab === 'headers' && (
                   <div className="space-y-3">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-zinc-500 dark:text-zinc-400">Header Pairs</span>
-                      <button
-                        onClick={addHeader}
-                        className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus size={13} /> Add Header
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {headers.map((h, i) => (
-                        <div key={i} className="flex gap-2 items-center">
-                          <input
-                            type="text"
-                            placeholder="Header Key (e.g. Authorization)"
-                            value={h.key}
-                            onChange={(e) => updateHeader(i, 'key', e.target.value)}
-                            className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Value (e.g. Bearer token)"
-                            value={h.value}
-                            onChange={(e) => updateHeader(i, 'value', e.target.value)}
-                            className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600"
-                          />
-                          <button
-                            onClick={() => removeHeader(i)}
-                            className="p-2 text-zinc-400 hover:text-rose-500 rounded transition cursor-pointer"
-                            title="Delete"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                    {headers.map((h, i) => (
+                      <div key={i} className="flex gap-2 items-center">
+                        <input
+                          placeholder="Header Name"
+                          value={h.key}
+                          onChange={(e) => {
+                            const next = [...headers];
+                            next[i].key = e.target.value;
+                            setHeaders(next);
+                          }}
+                          className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3.5 py-2 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                        />
+                        <input
+                          placeholder="Value"
+                          value={h.value}
+                          onChange={(e) => {
+                            const next = [...headers];
+                            next[i].value = e.target.value;
+                            setHeaders(next);
+                          }}
+                          className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3.5 py-2 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                        />
+                        <button
+                          onClick={() => setHeaders(headers.filter((_, idx) => idx !== i))}
+                          className="p-2 text-zinc-400 hover:text-rose-500 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setHeaders([...headers, { key: '', value: '' }])}
+                      className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center gap-1.5 font-medium py-1"
+                    >
+                      <Plus size={13} /> Add Header
+                    </button>
                   </div>
                 )}
 
-                {/* SubTab: Body */}
+                {/* Sub-tab 2: Body */}
                 {subTab === 'body' && (
                   <div className="space-y-2">
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-zinc-500 dark:text-zinc-400">JSON / Raw Payload</span>
-                      <button
-                        onClick={() => setBody(formatBody(body))}
-                        className="text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:underline cursor-pointer"
-                      >
-                        Format JSON
-                      </button>
+                      <span className="text-zinc-400">JSON / Raw Payload</span>
+                      {body && (
+                        <button
+                          onClick={() => setBody(formatBody(body))}
+                          className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                        >
+                          Format JSON
+                        </button>
+                      )}
                     </div>
                     <textarea
                       rows={10}
-                      value={body}
                       disabled={['GET', 'HEAD'].includes(method)}
+                      placeholder={['GET', 'HEAD'].includes(method) ? 'Method ini biasanya tidak memiliki request body.' : '{\n  "key": "value"\n}'}
+                      value={body}
                       onChange={(e) => setBody(e.target.value)}
-                      placeholder='{\n  "key": "value"\n}'
-                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition"
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400 disabled:opacity-40"
                     />
                   </div>
                 )}
 
-                {/* SubTab: Live cURL */}
+                {/* Sub-tab 3: Generated cURL */}
                 {subTab === 'curl' && (
                   <div className="space-y-2">
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-zinc-500 dark:text-zinc-400">Auto-Generated cURL Command</span>
+                      <span className="text-zinc-400">Live cURL Equivalent</span>
                       <button
                         onClick={() => copyToClipboard(generateCurlFromTester())}
-                        className="text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:underline flex items-center gap-1 cursor-pointer"
+                        className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 flex items-center gap-1"
                       >
                         {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
-                        {copied ? 'Copied' : 'Copy cURL'}
+                        {copied ? 'Copied' : 'Copy'}
                       </button>
                     </div>
-                    <pre className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto whitespace-pre-wrap select-all">
+                    <pre className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 font-mono text-xs text-zinc-800 dark:text-zinc-200 overflow-x-auto whitespace-pre-wrap select-all">
                       {generateCurlFromTester()}
-                    </pre>
-                  </div>
-                )}
-
-                {/* SubTab: Code Generation */}
-                {subTab === 'codegen' && (
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      {['curl', 'fetch', 'python', 'golang'].map((lang) => (
-                        <button
-                          key={lang}
-                          onClick={() => setCodeLang(lang)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition cursor-pointer ${codeLang === lang ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'}`}
-                        >
-                          {lang === 'fetch' ? 'JavaScript (Fetch)' : lang}
-                        </button>
-                      ))}
-                    </div>
-                    <pre className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto whitespace-pre-wrap select-all">
-                      {generateCodeSnippet(codeLang)}
                     </pre>
                   </div>
                 )}
@@ -729,8 +890,149 @@ func main() {
           </>
         )}
 
-      </main>
+        {/* ======================= TAB 3: HISTORY ======================= */}
+        {mainTab === 'history' && (
+          <div className="flex-1 bg-white dark:bg-zinc-900 p-6 flex flex-col overflow-y-auto">
+            <div className="max-w-5xl w-full mx-auto space-y-6">
+              {/* Header & Controls */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800">
+                <div>
+                  <h2 className="text-base font-bold tracking-tight">Request History</h2>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Riwayat eksekusi dari tab cURL dan API Tester yang tersimpan secara lokal di browser Anda.
+                  </p>
+                </div>
 
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-2.5 text-zinc-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari URL / Method..."
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      className="h-9 pl-9 pr-3 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                    />
+                  </div>
+
+                  {historyList.length > 0 && (
+                    <button
+                      onClick={clearAllHistory}
+                      className="h-9 px-3.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 border border-rose-500/20 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Trash2 size={13} />
+                      <span>Clear All</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* History Items List */}
+              {filteredHistory.length === 0 ? (
+                <div className="py-20 flex flex-col items-center justify-center text-center space-y-3 text-zinc-400">
+                  <History size={36} className="opacity-30" />
+                  <div className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                    {historySearch ? 'Tidak ada riwayat yang cocok dengan pencarian.' : 'Belum ada riwayat request.'}
+                  </div>
+                  <p className="text-xs text-zinc-400 max-w-sm">
+                    Setiap request yang kamu jalankan dari tab cURL atau API Tester akan otomatis tercatat di sini.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredHistory.map((item) => {
+                    const curlStr =
+                      item.curlCommand ||
+                      generateCurlFromTester(item.method, item.url, item.headers || [], item.body || '');
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/40 hover:border-zinc-300 dark:hover:border-zinc-700/80 transition space-y-3"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <span
+                              className={`px-2.5 py-0.5 rounded font-mono font-bold text-xs border ${getMethodBadgeColor(
+                                item.method
+                              )}`}
+                            >
+                              {item.method}
+                            </span>
+                            <span className="font-mono text-xs text-zinc-900 dark:text-zinc-100 font-semibold break-all">
+                              {item.url}
+                            </span>
+                            <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-mono">
+                              via {item.source}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs text-zinc-400 font-mono shrink-0">
+                            {item.status && (
+                              <span
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                  item.status >= 200 && item.status < 300
+                                    ? 'text-emerald-500 bg-emerald-500/10'
+                                    : 'text-rose-500 bg-rose-500/10'
+                                }`}
+                              >
+                                {item.status}
+                              </span>
+                            )}
+                            {item.timeMs > 0 && <span>{item.timeMs}ms</span>}
+                            <span>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <button
+                              onClick={(e) => deleteHistoryItem(item.id, e)}
+                              className="text-zinc-400 hover:text-rose-500 p-1 cursor-pointer transition"
+                              title="Delete from history"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* cURL snippet */}
+                        <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 font-mono text-[11px] text-zinc-700 dark:text-zinc-300 overflow-x-auto whitespace-pre-wrap max-h-24">
+                          {curlStr}
+                        </div>
+
+                        {/* Reuse & Copy Action Buttons */}
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            onClick={() => copyToClipboard(curlStr, item.id)}
+                            className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            {copiedId === item.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                            <span>{copiedId === item.id ? 'Copied' : 'Copy cURL'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => loadHistoryToCurl(item)}
+                            className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                            title="Buka kembali di tab cURL"
+                          >
+                            <Terminal size={12} />
+                            <span>Use in cURL</span>
+                          </button>
+
+                          <button
+                            onClick={() => loadHistoryToTester(item)}
+                            className="px-3 py-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:opacity-90 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                            title="Buka kembali di tab API Tester"
+                          >
+                            <Sliders size={12} />
+                            <span>Use in Tester</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
