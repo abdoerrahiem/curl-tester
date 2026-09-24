@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Play,
   Sun,
@@ -16,11 +16,14 @@ import {
   RotateCcw,
   Sparkles,
   History,
-  ArrowUpRight,
   Search,
-  ExternalLink
+  LogIn,
+  LogOut,
+  User as UserIcon
 } from 'lucide-react';
 import { parseCurlCommand, sanitizeCurlInput } from './utils/curlParser';
+
+const GOOGLE_CLIENT_ID = '679480905723-2a923njts4dmr3l84kea5uuh6f40q6gr.apps.googleusercontent.com';
 
 export default function App() {
   const [theme, setTheme] = useState(() => {
@@ -32,6 +35,23 @@ export default function App() {
   });
 
   const [mainTab, setMainTab] = useState('curl'); // 'curl' | 'tester' | 'history'
+
+  // User Auth State
+  const [user, setUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem('curl_tester_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [token, setToken] = useState(() => {
+    try {
+      return localStorage.getItem('curl_tester_token') || '';
+    } catch {
+      return '';
+    }
+  });
 
   // Tab cURL specific state
   const [rawCurl, setRawCurl] = useState('');
@@ -51,21 +71,15 @@ export default function App() {
   const [importCurlModalOpen, setImportCurlModalOpen] = useState(false);
   const [importCurlInput, setImportCurlInput] = useState('');
 
-  // Code Export tab
-  const [codeLang, setCodeLang] = useState('fetch');
-
   // History state
-  const [historyList, setHistoryList] = useState(() => {
-    try {
-      const saved = localStorage.getItem('curl_tester_history');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [historyList, setHistoryList] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [copied, setCopied] = useState(false);
+
+  // Ref Google Button container
+  const googleBtnRef = useRef(null);
 
   // Sync theme
   useEffect(() => {
@@ -81,37 +95,171 @@ export default function App() {
     }
   }, [theme]);
 
-  // Sync history to localStorage
-  const saveToHistory = (item) => {
+  // Load user profile & history
+  const fetchUserHistory = async (authToken) => {
+    if (!authToken) return;
+    setHistoryLoading(true);
     try {
-      setHistoryList((prev) => {
-        const next = [item, ...prev.filter((h) => h.id !== item.id)].slice(0, 50);
-        localStorage.setItem('curl_tester_history', JSON.stringify(next));
-        return next;
+      const res = await fetch('/api/history', {
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        }
       });
-    } catch (e) {
-      console.error('Failed to save history', e);
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryList(data.history || []);
+      } else if (res.status === 401) {
+        handleLogout();
+      }
+    } catch (err) {
+      console.error('Failed to fetch history:', err);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
-  const clearAllHistory = () => {
-    if (window.confirm('Hapus seluruh riwayat request?')) {
+  useEffect(() => {
+    if (token) {
+      fetchUserHistory(token);
+    } else {
+      // Guest local fallback
+      try {
+        const saved = localStorage.getItem('curl_tester_history_guest');
+        setHistoryList(saved ? JSON.parse(saved) : []);
+      } catch {
+        setHistoryList([]);
+      }
+    }
+  }, [token]);
+
+  // Google Sign In Callback
+  const handleGoogleCallback = async (response) => {
+    try {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: response.credential })
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        setToken(data.token);
+        setUser(data.user);
+        localStorage.setItem('curl_tester_token', data.token);
+        localStorage.setItem('curl_tester_user', JSON.stringify(data.user));
+        fetchUserHistory(data.token);
+      } else {
+        alert(data.message || 'Gagal login dengan Google');
+      }
+    } catch (err) {
+      alert('Error saat menghubungi server auth: ' + err.message);
+    }
+  };
+
+  // Initialize Google Identity Services
+  useEffect(() => {
+    const initGoogle = () => {
+      if (window.google?.accounts?.id) {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleGoogleCallback,
+          auto_select: false
+        });
+
+        if (googleBtnRef.current && !user) {
+          googleBtnRef.current.innerHTML = '';
+          window.google.accounts.id.renderButton(googleBtnRef.current, {
+            theme: theme === 'dark' ? 'filled_black' : 'outline',
+            size: 'medium',
+            shape: 'pill',
+            text: 'signin_with',
+            logo_alignment: 'left'
+          });
+        }
+      }
+    };
+
+    const timer = setInterval(() => {
+      if (window.google?.accounts?.id) {
+        clearInterval(timer);
+        initGoogle();
+      }
+    }, 300);
+
+    return () => clearInterval(timer);
+  }, [theme, user]);
+
+  const handleLogout = () => {
+    setToken('');
+    setUser(null);
+    localStorage.removeItem('curl_tester_token');
+    localStorage.removeItem('curl_tester_user');
+    try {
+      const saved = localStorage.getItem('curl_tester_history_guest');
+      setHistoryList(saved ? JSON.parse(saved) : []);
+    } catch {
+      setHistoryList([]);
+    }
+  };
+
+  const saveToHistory = async (item) => {
+    if (token) {
+      // Reload history from server to get accurate MySQL state
+      fetchUserHistory(token);
+    } else {
+      // Guest mode
+      try {
+        setHistoryList((prev) => {
+          const next = [item, ...prev.filter((h) => h.id !== item.id)].slice(0, 50);
+          localStorage.setItem('curl_tester_history_guest', JSON.stringify(next));
+          return next;
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const clearAllHistory = async () => {
+    if (!window.confirm('Hapus seluruh riwayat request?')) return;
+    if (token) {
+      try {
+        await fetch('/api/history', {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setHistoryList([]);
+      } catch (e) {
+        alert('Gagal menghapus riwayat di server: ' + e.message);
+      }
+    } else {
       setHistoryList([]);
       try {
-        localStorage.removeItem('curl_tester_history');
+        localStorage.removeItem('curl_tester_history_guest');
       } catch (e) {}
     }
   };
 
-  const deleteHistoryItem = (id, e) => {
+  const deleteHistoryItem = async (id, e) => {
     e.stopPropagation();
-    setHistoryList((prev) => {
-      const next = prev.filter((item) => item.id !== id);
+    if (token) {
       try {
-        localStorage.setItem('curl_tester_history', JSON.stringify(next));
-      } catch (err) {}
-      return next;
-    });
+        await fetch(`/api/history/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setHistoryList((prev) => prev.filter((item) => String(item.id) !== String(id)));
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      setHistoryList((prev) => {
+        const next = prev.filter((item) => String(item.id) !== String(id));
+        try {
+          localStorage.setItem('curl_tester_history_guest', JSON.stringify(next));
+        } catch (err) {}
+        return next;
+      });
+    }
   };
 
   const toggleTheme = () => {
@@ -241,14 +389,19 @@ export default function App() {
     }
 
     try {
+      const reqHeaders = { 'Content-Type': 'application/json' };
+      if (token) reqHeaders['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/proxy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: reqHeaders,
         body: JSON.stringify({
           url: parsed.url,
           method: parsed.method,
           headers: parsed.headers,
-          body: parsed.body
+          body: parsed.body,
+          source: 'curl',
+          curlCommand: rawCurl
         })
       });
 
@@ -291,14 +444,19 @@ export default function App() {
     const activeCurl = generateCurlFromTester(method, url, headers, body);
 
     try {
+      const reqHeaders = { 'Content-Type': 'application/json' };
+      if (token) reqHeaders['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/proxy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: reqHeaders,
         body: JSON.stringify({
           url,
           method,
           headers: headerMap,
-          body: !['GET', 'HEAD'].includes(method) ? body : undefined
+          body: !['GET', 'HEAD'].includes(method) ? body : undefined,
+          source: 'tester',
+          curlCommand: activeCurl
         })
       });
 
@@ -379,7 +537,7 @@ export default function App() {
           )}
         </div>
 
-        {/* Response Body Box: capped at 50vh */}
+        {/* Response Body Box: capped at 60vh */}
         <div className="space-y-2">
           <div className="flex justify-between items-center text-xs">
             <span className="text-zinc-500 dark:text-zinc-400">Response Body</span>
@@ -468,7 +626,37 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-3">
+          {/* User Profile or Google Sign In */}
+          {user ? (
+            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60">
+              {user.avatar ? (
+                <img src={user.avatar} alt={user.name} className="w-6 h-6 rounded-full object-cover" />
+              ) : (
+                <UserIcon size={16} className="text-zinc-500" />
+              )}
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 leading-tight">
+                  {user.name || user.email}
+                </span>
+                <span className="text-[10px] text-zinc-400 leading-none">{user.email}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="ml-1 p-1 text-zinc-400 hover:text-rose-500 rounded transition cursor-pointer"
+                title="Logout"
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center">
+              <div ref={googleBtnRef} className="h-9 min-w-[140px]" />
+            </div>
+          )}
+
+          <div className="h-5 w-px bg-zinc-200 dark:border-zinc-800" />
+
           <button
             onClick={toggleTheme}
             className="p-2 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
@@ -533,6 +721,13 @@ export default function App() {
             )}
           </button>
         </div>
+
+        {user && (
+          <div className="text-[11px] text-zinc-400 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span>MySQL Cloud Sync Active</span>
+          </div>
+        )}
       </div>
 
       {/* 3. Main Content Area */}
@@ -899,7 +1094,9 @@ export default function App() {
                 <div>
                   <h2 className="text-base font-bold tracking-tight">Request History</h2>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    Riwayat eksekusi dari tab cURL dan API Tester yang tersimpan secara lokal di browser Anda.
+                    {user
+                      ? `Riwayat request tersimpan secara cloud di MySQL untuk akun ${user.email}.`
+                      : 'Riwayat sementara di browser. Login dengan Google untuk menyimpan riwayat permanen di akun Anda.'}
                   </p>
                 </div>
 
@@ -928,14 +1125,21 @@ export default function App() {
               </div>
 
               {/* History Items List */}
-              {filteredHistory.length === 0 ? (
+              {historyLoading ? (
+                <div className="py-20 flex flex-col items-center justify-center text-center space-y-3 text-zinc-400">
+                  <div className="w-6 h-6 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs">Memuat riwayat dari MySQL...</span>
+                </div>
+              ) : filteredHistory.length === 0 ? (
                 <div className="py-20 flex flex-col items-center justify-center text-center space-y-3 text-zinc-400">
                   <History size={36} className="opacity-30" />
                   <div className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
                     {historySearch ? 'Tidak ada riwayat yang cocok dengan pencarian.' : 'Belum ada riwayat request.'}
                   </div>
                   <p className="text-xs text-zinc-400 max-w-sm">
-                    Setiap request yang kamu jalankan dari tab cURL atau API Tester akan otomatis tercatat di sini.
+                    {user
+                      ? 'Setiap request yang kamu jalankan akan otomatis tersinkronisasi ke akun kamu.'
+                      : 'Request kamu akan dicatat di browser lokal. Login dengan Google agar tersimpan di cloud database.'}
                   </p>
                 </div>
               ) : (
