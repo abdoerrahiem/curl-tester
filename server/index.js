@@ -121,6 +121,37 @@ app.post('/api/auth/google', async (req, res) => {
 });
 
 // Verify current session
+
+// Admin only: List all registered users (Khusus abdoerrahiem@gmail.com)
+app.get('/api/users', authenticateUser, async (req, res) => {
+  if (req.user.email !== 'abdoerrahiem@gmail.com') {
+    return res.status(403).json({ error: true, message: 'Forbidden: Admin access only' });
+  }
+
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        u.id, 
+        u.google_id as googleId, 
+        u.email, 
+        u.name, 
+        u.avatar, 
+        u.created_at as createdAt, 
+        u.updated_at as updatedAt,
+        COUNT(h.id) as totalRequests,
+        MAX(h.created_at) as lastActive
+      FROM users u
+      LEFT JOIN request_history h ON u.id = h.user_id
+      GROUP BY u.id
+      ORDER BY u.id DESC
+    `);
+    return res.json({ users: rows });
+  } catch (err) {
+    console.error('Fetch users error:', err);
+    return res.status(500).json({ error: true, message: err.message });
+  }
+});
+
 app.get('/api/auth/me', authenticateUser, async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT id, email, name, avatar, created_at FROM users WHERE id = ? LIMIT 1', [req.user.id]);
