@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import dotenv from 'dotenv';
 import pool, { initDb } from './db.js';
-import { executeWarpRequest } from './warp-request.js';
+import { executeViaCloudflareWorker } from './cf-worker-request.js';
 
 dotenv.config();
 
@@ -284,7 +284,7 @@ app.post(['/api/proxy', '/api/execute'], optionalAuth, async (req, res) => {
     }
 
     // Eksekusi request lewat Cloudflare WARP egress
-    const response = await executeWarpRequest(url, requestOptions);
+    const response = await executeViaCloudflareWorker(url, requestOptions);
     const endTime = performance.now();
     const rawBody = response.body;
 
