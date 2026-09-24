@@ -745,11 +745,11 @@ export default function App() {
             )}
           </button>
 
-          {user?.user?.email === 'abdoerrahiem@gmail.com' && (
+          {user?.email === 'abdoerrahiem@gmail.com' && (
             <button
               onClick={() => {
                 setMainTab('users');
-                if (user?.token) fetchUsersList(user.token);
+                if (token) fetchUsersList(token);
               }}
               className={`py-3 flex items-center gap-2 relative transition cursor-pointer ${
                 mainTab === 'users'
@@ -1282,7 +1282,7 @@ export default function App() {
         )}
 
         {/* ======================= TAB 4: USERS (Admin abdoerrahiem@gmail.com Only) ======================= */}
-        {mainTab === 'users' && user?.user?.email === 'abdoerrahiem@gmail.com' && (
+        {mainTab === 'users' && user?.email === 'abdoerrahiem@gmail.com' && (
           <div className="flex-1 flex flex-col bg-white dark:bg-zinc-900 overflow-y-auto">
             <div className="max-w-5xl w-full mx-auto p-6 space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-5">
@@ -1308,7 +1308,7 @@ export default function App() {
                     />
                   </div>
                   <button
-                    onClick={() => user?.token && fetchUsersList(user.token)}
+                    onClick={() => token && fetchUsersList(token)}
                     disabled={usersLoading}
                     className="h-9 px-3 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                     title="Refresh data user"
