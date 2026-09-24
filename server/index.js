@@ -20,7 +20,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', name: 'curl-tester-backend', timestamp: Date.now() });
 });
 
-app.post('/api/execute', async (req, res) => {
+app.post('/api/proxy', async (req, res) => {
   const {
     method = 'GET',
     url,

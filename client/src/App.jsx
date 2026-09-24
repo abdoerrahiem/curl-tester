@@ -395,7 +395,7 @@ export default function App() {
           </div>
 
           {isLoading ? (
-            <div className="h-[280px] max-h-[50vh] rounded-lg border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 text-xs space-y-3">
+            <div className="h-[280px] max-h-[60vh] rounded-lg border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 text-xs space-y-3">
               <div className="w-6 h-6 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
               <span>Executing request via backend proxy...</span>
             </div>
@@ -407,11 +407,11 @@ export default function App() {
               <div>{resp.message}</div>
             </div>
           ) : resp ? (
-            <pre className="max-h-[50vh] p-4 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-auto whitespace-pre-wrap select-all">
+            <pre className="max-h-[60vh] p-4 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-auto whitespace-pre-wrap select-all">
               {formatBody(resp.body)}
             </pre>
           ) : (
-            <div className="h-[280px] max-h-[50vh] rounded-lg border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 text-xs space-y-2">
+            <div className="h-[280px] max-h-[60vh] rounded-lg border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 text-xs space-y-2">
               <Code size={24} className="opacity-40" />
               <span>Klik &quot;Execute&quot; atau &quot;Send&quot; untuk melihat hasil response.</span>
             </div>
